@@ -71,19 +71,20 @@ class MetaLearner(object):
     def sample(self, tasks, first_order=False):
         """Sample trajectories (before and after the update of the parameters) 
         for all the tasks `tasks`.
+        :return a list of multiple mdps' samples, each a tuple of old and new batch of traj.
         """
         episodes = []
-        for task in tasks:
-            self.sampler.reset_task(task)
+        for task in tasks: # for each mdp of the env
+            self.sampler.reset_task(task) # assign the same mdp to num_workers sub-processes to rollout traj.
             train_episodes = self.sampler.sample(self.policy,
-                gamma=self.gamma, device=self.device)
+                gamma=self.gamma, device=self.device) # sample fast_batch_size trajectories for the current mdp
 
-            params = self.adapt(train_episodes, first_order=first_order)
+            params = self.adapt(train_episodes, first_order=first_order) # theta - phi
 
             valid_episodes = self.sampler.sample(self.policy, params=params,
-                gamma=self.gamma, device=self.device)
+                gamma=self.gamma, device=self.device) # with new policy, sample fast_batch_size trajectories for the current mdp
             episodes.append((train_episodes, valid_episodes))
-        return episodes
+        return episodes # a list of multiple mdps' samples, each a tuple of old and new batch of traj.
 
     def kl_divergence(self, episodes, old_pis=None):
         kls = []
@@ -120,16 +121,22 @@ class MetaLearner(object):
             return flat_grad2_kl + damping * vector
         return _product
 
-    def surrogate_loss(self, episodes, old_pis=None):
+    def surrogate_loss(self, episodes, old_pis=None): # rl pseudo loss and kl, based on the adapted parameters
+        """
+
+        :param episodes:
+        :param old_pis:
+        :return: the average RL loss of multiple mdps with adapted policies (the policy seems to be adapted separately for different mdp)
+        """
         losses, kls, pis = [], [], []
         if old_pis is None:
-            old_pis = [None] * len(episodes)
+            old_pis = [None] * len(episodes) # such many env/dynamics/task
 
-        for (train_episodes, valid_episodes), old_pi in zip(episodes, old_pis):
-            params = self.adapt(train_episodes)
+        for (train_episodes, valid_episodes), old_pi in zip(episodes, old_pis): # for each mdp's old and new traj
+            params = self.adapt(train_episodes) # compute again theta - phi
             with torch.set_grad_enabled(old_pi is None):
-                pi = self.policy(valid_episodes.observations, params=params)
-                pis.append(detach_distribution(pi))
+                pi = self.policy(valid_episodes.observations, params=params) # given state, output action disribution, adapted policy
+                pis.append(detach_distribution(pi)) # what is detach
 
                 if old_pi is None:
                     old_pi = detach_distribution(pi)
@@ -157,14 +164,14 @@ class MetaLearner(object):
                 kls.append(kl)
 
         return (torch.mean(torch.stack(losses, dim=0)),
-                torch.mean(torch.stack(kls, dim=0)), pis)
+                torch.mean(torch.stack(kls, dim=0)), pis) # the loss based on adapted parameters
 
     def step(self, episodes, max_kl=1e-3, cg_iters=10, cg_damping=1e-2,
              ls_max_steps=10, ls_backtrack_ratio=0.5):
         """Meta-optimization step (ie. update of the initial parameters), based 
         on Trust Region Policy Optimization (TRPO, [4]).
         """
-        old_loss, _, old_pis = self.surrogate_loss(episodes)
+        old_loss, _, old_pis = self.surrogate_loss(episodes) # average RL loss of multiple mdps
         grads = torch.autograd.grad(old_loss, self.policy.parameters())
         grads = parameters_to_vector(grads)
 
@@ -194,7 +201,7 @@ class MetaLearner(object):
                 break
             step_size *= ls_backtrack_ratio
         else:
-            vector_to_parameters(old_params, self.policy.parameters())
+            vector_to_parameters(old_params, self.policy.parameters()) # trpo update on the loss
 
     def to(self, device, **kwargs):
         self.policy.to(device, **kwargs)

@@ -20,40 +20,41 @@ def main(args):
     continuous_actions = (args.env_name in ['AntVel-v1', 'AntDir-v1',
         'AntPos-v0', 'HalfCheetahVel-v1', 'HalfCheetahDir-v1',
         '2DNavigation-v0'])
-
+    # tensorboard summaries
     writer = SummaryWriter('./logs/{0}'.format(args.output_folder))
     save_folder = './saves/{0}'.format(args.output_folder)
     if not os.path.exists(save_folder):
         os.makedirs(save_folder)
+    # save configs
     with open(os.path.join(save_folder, 'config.json'), 'w') as f:
         config = {k: v for (k, v) in vars(args).items() if k != 'device'}
         config.update(device=args.device.type)
         json.dump(config, f, indent=2)
-
-    sampler = BatchSampler(args.env_name, batch_size=args.fast_batch_size,
+    # traj generator
+    sampler = BatchSampler(args.env_name, batch_size=args.fast_batch_size, # batch_size for the same mdp
         num_workers=args.num_workers)
     if continuous_actions:
-        policy = NormalMLPPolicy(
+        policy = NormalMLPPolicy( # sample from normal distribution
             int(np.prod(sampler.envs.observation_space.shape)),
-            int(np.prod(sampler.envs.action_space.shape)),
+            int(np.prod(sampler.envs.action_space.shape)), # given state output action
             hidden_sizes=(args.hidden_size,) * args.num_layers)
     else:
-        policy = CategoricalMLPPolicy(
+        policy = CategoricalMLPPolicy( # sample from categorical distribution
             int(np.prod(sampler.envs.observation_space.shape)),
             sampler.envs.action_space.n,
             hidden_sizes=(args.hidden_size,) * args.num_layers)
-    baseline = LinearFeatureBaseline(
-        int(np.prod(sampler.envs.observation_space.shape)))
+    baseline = LinearFeatureBaseline( # ? what for
+        int(np.prod(sampler.envs.observation_space.shape))) # given state
 
-    metalearner = MetaLearner(sampler, policy, baseline, gamma=args.gamma,
+    metalearner = MetaLearner(sampler, policy, baseline, gamma=args.gamma, # baseline? gamma?
         fast_lr=args.fast_lr, tau=args.tau, device=args.device)
 
     for batch in range(args.num_batches):
-        tasks = sampler.sample_tasks(num_tasks=args.meta_batch_size)
-        episodes = metalearner.sample(tasks, first_order=args.first_order)
+        tasks = sampler.sample_tasks(num_tasks=args.meta_batch_size) # for the specified env, sample meta_batch_size mdp
+        episodes = metalearner.sample(tasks, first_order=args.first_order) # a list of multiple mdp's old and new traj
         metalearner.step(episodes, max_kl=args.max_kl, cg_iters=args.cg_iters,
             cg_damping=args.cg_damping, ls_max_steps=args.ls_max_steps,
-            ls_backtrack_ratio=args.ls_backtrack_ratio)
+            ls_backtrack_ratio=args.ls_backtrack_ratio) # meta-update with trpo, wrt the average RL loss of multiple mdps
 
         # Tensorboard
         writer.add_scalar('total_rewards/before_update',

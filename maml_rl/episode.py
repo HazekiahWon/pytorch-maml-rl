@@ -2,12 +2,12 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 
-class BatchEpisodes(object):
+class BatchEpisodes(object): # for the same mdp, maintain batchsize trajectories
     def __init__(self, batch_size, gamma=0.95, device='cpu'):
         self.batch_size = batch_size
         self.gamma = gamma
         self.device = device
-
+        # a list of batch_size observation list
         self._observations_list = [[] for _ in range(batch_size)]
         self._actions_list = [[] for _ in range(batch_size)]
         self._rewards_list = [[] for _ in range(batch_size)]
@@ -92,10 +92,19 @@ class BatchEpisodes(object):
         return advantages
 
     def append(self, observations, actions, rewards, batch_ids):
+        """
+        for each worker maintain a list, identified by id
+        :param observations:
+        :param actions:
+        :param rewards:
+        :param batch_ids:
+        :return:
+        """
         for observation, action, reward, batch_id in zip(
                 observations, actions, rewards, batch_ids):
             if batch_id is None:
                 continue
+            # num_worker * t
             self._observations_list[batch_id].append(observation.astype(np.float32))
             self._actions_list[batch_id].append(action.astype(np.float32))
             self._rewards_list[batch_id].append(reward.astype(np.float32))

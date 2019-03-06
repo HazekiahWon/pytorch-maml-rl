@@ -61,8 +61,8 @@ class EnvWorker(mp.Process):
 
 class SubprocVecEnv(gym.Env):
     def __init__(self, env_factory, queue):
-        self.lock = mp.Lock()
-        self.remotes, self.work_remotes = zip(*[mp.Pipe() for _ in env_factory])
+        self.lock = mp.Lock() # ?
+        self.remotes, self.work_remotes = zip(*[mp.Pipe() for _ in env_factory]) # ?pipe
         self.workers = [EnvWorker(remote, env_fn, queue, self.lock)
             for (remote, env_fn) in zip(self.work_remotes, env_factory)]
         for worker in self.workers:
@@ -78,7 +78,13 @@ class SubprocVecEnv(gym.Env):
         self.observation_space = observation_space
         self.action_space = action_space
 
-    def step(self, actions):
+    def step(self, actions): # Step the environment by one timestep. Returns observation, reward, done, info.
+        """
+        for all worker do:
+            step the mdp
+        :param actions:
+        :return: observations, rewards, dones, task_ids, infos (each is a list of different worker's output at the same t
+        """
         self.step_async(actions)
         return self.step_wait()
 
@@ -93,12 +99,19 @@ class SubprocVecEnv(gym.Env):
         observations, rewards, dones, task_ids, infos = zip(*results)
         return np.stack(observations), np.stack(rewards), np.stack(dones), task_ids, infos
 
-    def reset(self):
+    def reset(self): # Reset the environment's state. Returns observation (for each worker)
+        """
+        for all the workers do:
+            reset the mdp
+        :return: a list of observation (of different worker but the same t),indicator of which mdp
+        """
         for remote in self.remotes:
             remote.send(('reset', None))
         results = [remote.recv() for remote in self.remotes]
         observations, task_ids = zip(*results)
         return np.stack(observations), task_ids
+        # a list of observation (of different worker but the same t),
+        # indicator of which mdp
 
     def reset_task(self, tasks):
         for remote, task in zip(self.remotes, tasks):

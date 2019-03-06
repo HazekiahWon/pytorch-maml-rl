@@ -28,10 +28,10 @@ class NormalMLPPolicy(Policy):
             self.add_module('layer{0}'.format(i),
                 nn.Linear(layer_sizes[i - 1], layer_sizes[i]))
         self.mu = nn.Linear(layer_sizes[-1], output_size)
-
-        self.sigma = nn.Parameter(torch.Tensor(output_size))
-        self.sigma.data.fill_(math.log(init_std))
-        self.apply(weight_init)
+        # sigma seems not dependent on inp state
+        self.sigma = nn.Parameter(torch.Tensor(output_size)) # appear in model.parameters
+        self.sigma.data.fill_(math.log(init_std)) # const std?
+        self.apply(weight_init) # init weights
 
     def forward(self, input, params=None):
         if params is None:

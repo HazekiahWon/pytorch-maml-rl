@@ -20,7 +20,7 @@ def weighted_normalize(tensor, dim=None, weights=None, epsilon=1e-8):
     out.div_(std + epsilon)
     return out
 
-def detach_distribution(pi):
+def detach_distribution(pi): # distribution detach?
     if isinstance(pi, Categorical):
         distribution = Categorical(logits=pi.logits.detach())
     elif isinstance(pi, Normal):
